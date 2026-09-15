@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>𝓉𝑒𝒶𝑜𝒻𝓇𝓅𝓂 — RPM Student Chat</title>
+<meta name="description" content="The official live chat room for every student of RPM." />
+<link rel="icon" href="images/logo.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+<div class="landing">
+  <div class="logo-frame">
+  
+    <img src="images/logo.png" alt="RPM school logo" onerror="this.src='images/logo-placeholder.svg'" />
+  </div>
+
+  <h1 class="brand">𝓉𝑒𝒶𝑜𝒻𝓇𝓅𝓂</h1>
+  <p class="tagline">Welcome to 𝓉𝑒𝒶𝑜𝒻𝓇𝓅𝓂 — the live chat room built only for the students of RPM.</p>
+  <p class="school-tag">↻ Every RPM student can join and chat here without revealing their identity</p>
+
+  <button class="btn" id="enterBtn">Enter Live Chat Room</button>
+
+  <p class="landing-foot">Verified students only · Your RPM ID card is checked automatically once before you can chat, just to know you are a valid RPM'ian after it got deleted in 2 minutes</p>
+</div>
+
+<div id="entryModal" style="display:none; position:fixed; inset:0; background:rgba(8,5,4,.75); backdrop-filter:blur(3px); z-index:60; align-items:center; justify-content:center; padding:16px;">
+  <div class="verify-card" style="max-width:400px;">
+    <div id="modalChoice">
+      <h1 style="font-size:24px;">Join 𝓉𝑒𝒶𝑜𝒻𝓇𝓅𝓂</h1>
+      <p class="sub">Choose how you'd like to enter.</p>
+
+      <button class="btn" style="width:100%; margin-bottom:12px;" id="showNewForm">I'm new here</button>
+      <button class="btn btn-outline" style="width:100%;" id="showLoginForm">I already have an account</button>
+    </div>
+
+    <div id="newForm" style="display:none; text-align:left;">
+      <h1 style="font-size:24px; text-align:center;">Create your account</h1>
+      <p class="sub" style="text-align:center;">No otp mess just remember your username and password , it will not be displayed again screenshot or not it down..</p>
+      <div class="field">
+        <label>Display name (shown in chat)</label>
+        <input id="displayNameInput" type="text" placeholder="name" maxlength="24" />
+      </div>
+      <div class="field">
+        <label>Choose a username</label>
+        <input id="newUsername" type="text" placeholder="username" maxlength="20" autocapitalize="off" />
+        <span class="hint"></span>
+      </div>
+      <div class="field">
+        <label>Choose a password</label>
+        <input id="newPassword" type="password" placeholder="no fewer than 8" />
+      </div>
+      <div class="field">
+        <label>Confirm password</label>
+        <input id="newPassword2" type="password" placeholder="Re-type password" />
+      </div>
+      <p class="error-text" id="newFormError"></p>
+      <button class="btn" style="width:100%;" id="createAccountBtn">Create Account</button>
+      <button class="btn-outline btn" style="width:100%; margin-top:10px;" id="backFromNew">Back</button>
+    </div>
+
+   
+    <div id="loginForm" style="display:none; text-align:left;">
+      <h1 style="font-size:24px; text-align:center;">Welcome back</h1>
+      <p class="sub" style="text-align:center;">Enter your username & password.</p>
+      <div class="field">
+        <label>Username</label>
+        <input id="loginUsername" type="text" placeholder="username" autocapitalize="off" />
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input id="loginPassword" type="password" placeholder="Your password" />
+      </div>
+      <p class="error-text" id="loginFormError"></p>
+      <button class="btn" style="width:100%;" id="loginBtn">Log In</button>
+      <button class="btn-outline btn" style="width:100%; margin-top:10px;" id="backFromLogin">Back</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="js/config.js"></script>
+<script src="js/supabase-client.js"></script>
+<script src="js/auth.js"></script>
+<script>
+  const entryModal = document.getElementById("entryModal");
+  const modalChoice = document.getElementById("modalChoice");
+  const newForm = document.getElementById("newForm");
+  const loginForm = document.getElementById("loginForm");
+
+  function showPane(pane) {
+    [modalChoice, newForm, loginForm].forEach(p => p.style.display = "none");
+    pane.style.display = "block";
+  }
+
+  document.getElementById("enterBtn").addEventListener("click", async () => {
+   
+    const { data } = await sb.auth.getSession();
+    if (data.session) {
+      await routeAfterAuth();
+      return;
+    }
+    entryModal.style.display = "flex";
+    showPane(modalChoice);
+  });
+
+  document.getElementById("showNewForm").onclick = () => showPane(newForm);
+  document.getElementById("showLoginForm").onclick = () => showPane(loginForm);
+  document.getElementById("backFromNew").onclick = () => showPane(modalChoice);
+  document.getElementById("backFromLogin").onclick = () => showPane(modalChoice);
+
+  document.getElementById("createAccountBtn").onclick = async () => {
+    const btn = document.getElementById("createAccountBtn");
+    const errEl = document.getElementById("newFormError");
+    const name = document.getElementById("displayNameInput").value.trim();
+    const username = document.getElementById("newUsername").value.trim();
+    const password = document.getElementById("newPassword").value;
+    const password2 = document.getElementById("newPassword2").value;
+    errEl.textContent = "";
+
+    if (!name) { errEl.textContent = "Please enter a display name."; return; }
+    if (!/^[a-zA-Z0-9_]{3,20}$/.test(username)) {
+      errEl.textContent = "Username must be 3–20 characters: letters, numbers, underscore only.";
+      return;
+    }
+    if (password.length < 8) { errEl.textContent = "Password must be at least 8 characters."; return; }
+    if (password !== password2) { errEl.textContent = "Passwords don't match."; return; }
+
+    btn.disabled = true; btn.textContent = "Creating...";
+    try {
+      await createNewAccount(name, username, password);
+      await routeAfterAuth();
+    } catch (e) {
+      errEl.textContent = e.message || "Something went wrong. Try again.";
+    } finally {
+      btn.disabled = false; btn.textContent = "Create Account";
+    }
+  };
+
+  document.getElementById("loginBtn").onclick = async () => {
+    const btn = document.getElementById("loginBtn");
+    const errEl = document.getElementById("loginFormError");
+    const u = document.getElementById("loginUsername").value.trim();
+    const p = document.getElementById("loginPassword").value;
+    errEl.textContent = "";
+    if (!u || !p) { errEl.textContent = "Enter both username and password."; return; }
+
+    btn.disabled = true; btn.textContent = "Logging in...";
+    try {
+      await loginExisting(u, p);
+      await routeAfterAuth();
+    } catch (e) {
+      errEl.textContent = "Invalid username or password.";
+    } finally {
+      btn.disabled = false; btn.textContent = "Log In";
+    }
+  };
+
+
+  (async () => {
+    const { data } = await sb.auth.getSession();
+    if (data.session) {
+      const profile = await getMyProfile();
+      if (profile && profile.is_verified) {
+        document.getElementById("enterBtn").textContent = "Continue to Chat Room →";
+      }
+    }
+  })();
+</script>
+</body>
+</html>

@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>𝓉𝑒𝒶𝑜𝒻𝓇𝓅𝓂 — Global Chat Room</title>
+<link rel="icon" href="images/logo.png" />
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+<div class="chat-shell">
+
+  <aside class="members-panel" id="membersPanel">
+<button class="panel-close-btn" id="closeMembersPanel">✕</button>
+    <div class="brand-mini">𝓉𝑒𝒶𝑜𝒻𝓇𝓅𝓂</div>
+    <div class="room-name" id="roomNameLabel">𝑅𝒫𝑀 𝒫𝓊𝒷𝓁𝒾𝒸 𝑅𝑜𝑜𝓂</div>
+
+    <div class="online-count"><span id="onlineCountText">0 online</span></div>
+
+    <div class="member-list" id="memberList"><!-- filled by chat.js --></div>
+
+    <button class="btn-outline btn btn-small leave-btn" id="logoutBtn">Log out</button>
+  </aside>
+
+
+  <main class="chat-main">
+    <div class="chat-header">
+      <div style="display:flex; align-items:center; gap:10px;">
+        <button class="menu-toggle" id="menuToggle">☰</button>
+        <h2 id="headerRoomName">𝑅𝒫𝑀 𝒫𝓊𝒷𝓁𝒾𝒸 𝑅𝑜𝑜𝓂</h2>
+      </div>
+      <div style="display:flex; align-items:center; gap:10px;">
+        <button class="header-icon-btn" id="searchToggle" title="Search messages">⌕</button>
+        <span class="online-count" id="headerOnline"><span id="headerOnlineText">0 online</span></span>
+      </div>
+
+      <div class="search-panel" id="searchPanel">
+        <input type="text" id="searchInput" placeholder="Search messages…" />
+        <div class="search-results" id="searchResults"></div>
+      </div>
+    </div>
+
+    <button class="load-more-btn" id="loadMoreBtn">Load older messages</button>
+
+    <div class="messages-wrap">
+      <div class="messages" id="messages"></div>
+      <button class="jump-to-latest" id="jumpToLatest">↓ New messages</button>
+    </div>
+
+    <div class="typing-indicator" id="typingIndicator"></div>
+
+    <div class="composer">
+      <div class="reply-bar" id="replyBar">
+        <span>Replying to <b id="replyToName"></b>: <span id="replyToText"></span></span>
+        <button id="cancelReply">✕</button>
+      </div>
+
+      <div class="attach-preview" id="attachPreview">
+        <img id="attachImg" />
+        <span id="attachName" style="font-size:12.5px; color:var(--text-dim);"></span>
+        <button id="removeAttach">Remove</button>
+      </div>
+
+      <div class="sticker-panel" id="stickerPanel"></div>
+
+      <div class="composer-row">
+        <button class="icon-btn" id="stickerToggle" title="Stickers">⛾</button>
+        <label class="icon-btn" id="imageBtn" for="imageInput" title="Send image">◉°</label>
+        <input type="file" id="imageInput" accept="image/*" style="display:none;" />
+        <textarea id="msgInput" rows="1" placeholder="Type a message..."></textarea>
+        <button class="send-btn" id="sendBtn" disabled>➤</button>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="lightbox" id="lightbox"><img id="lightboxImg" /></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="js/config.js"></script>
+<script src="js/supabase-client.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/chat.js"></script>
+</body>
+</html>
