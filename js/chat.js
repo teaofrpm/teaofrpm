@@ -315,7 +315,59 @@ async function renderMessage(m, reactions = [], grouped = false) {
     actions.querySelector(".delete-btn").addEventListener("click", () => deleteMessage(m.id, row));
   }
 
+  wireMessageTouch(bubble, row, m.id);
+
   return row;
+}
+
+/* ---------------------------------------------------------
+   TOUCH / LONG-PRESS: on mobile there's no hover, so a
+   press-and-hold on the bubble opens the reaction picker
+   (matches WhatsApp/Instagram-style chats). A quick tap toggles
+   the small reply/copy/delete action row. Any real finger
+   movement before the hold threshold cancels it and lets the
+   normal page scroll/swipe through untouched — these listeners
+   are all "passive" (never call preventDefault), so they never
+   block or stutter scrolling.
+--------------------------------------------------------- */
+function wireMessageTouch(bubble, row, messageId) {
+  const LONG_PRESS_MS = 450;
+  const MOVE_THRESHOLD = 10;
+  let timer = null;
+  let startX = 0, startY = 0;
+  let longPressFired = false;
+
+  bubble.addEventListener("touchstart", (e) => {
+    if (!e.touches.length) return;
+    longPressFired = false;
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      longPressFired = true;
+      if (navigator.vibrate) navigator.vibrate(30);
+      openEmojiPicker(bubble, messageId);
+    }, LONG_PRESS_MS);
+  }, { passive: true });
+
+  bubble.addEventListener("touchmove", (e) => {
+    if (!e.touches.length) return;
+    const dx = Math.abs(e.touches[0].clientX - startX);
+    const dy = Math.abs(e.touches[0].clientY - startY);
+    if (dx > MOVE_THRESHOLD || dy > MOVE_THRESHOLD) clearTimeout(timer);
+  }, { passive: true });
+
+  ["touchend", "touchcancel"].forEach((evt) =>
+    bubble.addEventListener(evt, () => clearTimeout(timer), { passive: true })
+  );
+
+  bubble.addEventListener("click", (e) => {
+    if (longPressFired) { longPressFired = false; return; }
+    if (e.target.closest("img, a, .msg-actions, .reply-preview")) return;
+    const willShow = !row.classList.contains("show-actions");
+    document.querySelectorAll(".msg-row.show-actions").forEach((r) => r.classList.remove("show-actions"));
+    if (willShow) row.classList.add("show-actions");
+  });
 }
 
 function jumpToMessage(id) {
