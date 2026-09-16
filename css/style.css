@@ -727,3 +727,11 @@ a:hover{ color:var(--bright-red); }
   .msg-row{ max-width:88%; }
   .sticker-panel{ grid-template-columns:repeat(2, 1fr); }
 }
+
+.msg-row.own .avatar {
+  display: none !important;
+}
+
+.msg-row.own .msg-meta {
+  display: none !important;
+}
