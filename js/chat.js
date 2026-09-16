@@ -322,9 +322,9 @@ async function renderMessage(m, reactions = [], grouped = false) {
 
 /* ---------------------------------------------------------
    TOUCH / LONG-PRESS: on mobile there's no hover, so a
-   press-and-hold on the bubble opens the reaction picker
-   (matches WhatsApp/Instagram-style chats). A quick tap toggles
-   the small reply/copy/delete action row. Any real finger
+   press-and-hold on the bubble reveals the action panel
+   (react/reply/copy/delete — same row that shows on desktop
+   hover). A quick tap just closes it again. Any real finger
    movement before the hold threshold cancels it and lets the
    normal page scroll/swipe through untouched — these listeners
    are all "passive" (never call preventDefault), so they never
@@ -346,7 +346,8 @@ function wireMessageTouch(bubble, row, messageId) {
     timer = setTimeout(() => {
       longPressFired = true;
       if (navigator.vibrate) navigator.vibrate(30);
-      openEmojiPicker(bubble, messageId);
+      document.querySelectorAll(".msg-row.show-actions").forEach((r) => r.classList.remove("show-actions"));
+      row.classList.add("show-actions");
     }, LONG_PRESS_MS);
   }, { passive: true });
 
@@ -364,9 +365,12 @@ function wireMessageTouch(bubble, row, messageId) {
   bubble.addEventListener("click", (e) => {
     if (longPressFired) { longPressFired = false; return; }
     if (e.target.closest("img, a, .msg-actions, .reply-preview")) return;
-    const willShow = !row.classList.contains("show-actions");
-    document.querySelectorAll(".msg-row.show-actions").forEach((r) => r.classList.remove("show-actions"));
-    if (willShow) row.classList.add("show-actions");
+    row.classList.remove("show-actions"); // a plain tap just closes any open panel
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!row.classList.contains("show-actions")) return;
+    if (!row.contains(e.target)) row.classList.remove("show-actions");
   });
 }
 
