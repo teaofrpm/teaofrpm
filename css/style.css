@@ -473,6 +473,16 @@ a:hover{ color:var(--bright-red); }
 .msg-row.own{ align-self:flex-end; flex-direction:row-reverse; }
 .msg-row .avatar{ margin-top:2px; }
 
+.msg-row.grouped{ margin-top:-9px; }
+.msg-row.grouped .avatar{ visibility:hidden; }
+.msg-row.grouped .msg-meta{ display:none; }
+
+.bubble.highlight-flash{ animation:flashHighlight 1.5s ease; }
+@keyframes flashHighlight{
+  0%{ box-shadow:0 0 0 3px var(--gold-deep); }
+  100%{ box-shadow:0 0 0 0 rgba(245,158,11,0); }
+}
+
 .msg-bubble-wrap{ display:flex; flex-direction:column; }
 .msg-row.own .msg-bubble-wrap{ align-items:flex-end; }
 
@@ -499,6 +509,7 @@ a:hover{ color:var(--bright-red); }
   background:rgba(0,0,0,.03);
   border-radius:4px;
   max-width:100%;
+  cursor:pointer;
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
 }
 
