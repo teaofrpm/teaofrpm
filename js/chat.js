@@ -11,7 +11,10 @@ let STICKER_URLS = [];
 let oldestLoadedAt = null;
 let hasMoreHistory = true;
 let lastRenderedDay = null;
+let lastRenderedAuthorId = null;
+let lastRenderedAt = null;
 const PAGE_SIZE = 50;
+const GROUP_WINDOW_MS = 5 * 60 * 1000;
 
 let typingUsers = new Map(); // user_id -> { display_name, timeoutId }
 let isTypingBroadcasted = false;
@@ -50,6 +53,7 @@ async function init() {
   wireScrollTracking();
   wireLightbox();
   wireSearch();
+  wireGlobalKeys();
 }
 
 async function getProfile(userId) {
@@ -85,6 +89,8 @@ async function loadHistory() {
   const container = document.getElementById("messages");
   container.innerHTML = "";
   lastRenderedDay = null;
+  lastRenderedAuthorId = null;
+  lastRenderedAt = null;
   await appendMessages(container, ordered, reactionsByMsg, "append");
   updateLoadMoreButton();
   scrollToBottom();
@@ -107,19 +113,32 @@ function groupReactions(rows) {
 async function appendMessages(container, msgs, reactionsByMsg, mode) {
   const frag = document.createDocumentFragment();
   let dayRef = mode === "prepend" ? null : lastRenderedDay;
+  let authorRef = mode === "prepend" ? null : lastRenderedAuthorId;
+  let atRef = mode === "prepend" ? null : lastRenderedAt;
+
   for (const m of msgs) {
     const day = new Date(m.created_at).toDateString();
-    if (day !== dayRef) {
+    const dayChanged = day !== dayRef;
+    if (dayChanged) {
       frag.appendChild(buildDateDivider(m.created_at));
       dayRef = day;
     }
-    frag.appendChild(await renderMessage(m, reactionsByMsg[m.id] || []));
+
+    const grouped = !dayChanged && authorRef === m.user_id &&
+      atRef && (new Date(m.created_at) - new Date(atRef)) < GROUP_WINDOW_MS;
+
+    frag.appendChild(await renderMessage(m, reactionsByMsg[m.id] || [], grouped));
+    authorRef = m.user_id;
+    atRef = m.created_at;
   }
+
   if (mode === "prepend") {
     container.insertBefore(frag, container.firstChild);
   } else {
     container.appendChild(frag);
     lastRenderedDay = dayRef;
+    lastRenderedAuthorId = authorRef;
+    lastRenderedAt = atRef;
   }
 }
 
@@ -190,13 +209,13 @@ async function loadOlderMessages() {
   container.scrollTop = prevScrollTop + (container.scrollHeight - prevHeight);
 }
 
-async function renderMessage(m, reactions = []) {
+async function renderMessage(m, reactions = [], grouped = false) {
   const author = await getProfile(m.user_id);
   const isOwn = m.user_id === ME.id;
   const isOwnerMsg = author && author.role === "owner";
 
   const row = document.createElement("div");
-  row.className = `msg-row ${isOwn ? "own" : ""} ${isOwnerMsg ? "owner-msg" : ""}`;
+  row.className = `msg-row ${isOwn ? "own" : ""} ${isOwnerMsg ? "owner-msg" : ""} ${grouped ? "grouped" : ""}`;
   row.dataset.msgId = m.id;
 
   const avatar = document.createElement("div");
@@ -233,6 +252,7 @@ async function renderMessage(m, reactions = []) {
     } else {
       replyPrev.textContent = "Original message";
     }
+    replyPrev.addEventListener("click", () => jumpToMessage(m.reply_to));
     bubble.appendChild(replyPrev);
   }
 
@@ -266,6 +286,7 @@ async function renderMessage(m, reactions = []) {
   actions.innerHTML = `
     <button class="react-btn" title="React">🙂+</button>
     <button class="reply-btn" title="Reply">↩</button>
+    ${m.content ? `<button class="copy-btn" title="Copy text">⧉</button>` : ""}
     ${isOwn ? `<button class="delete-btn" title="Delete">🗑</button>` : ""}
   `;
   bubble.appendChild(actions);
@@ -285,11 +306,25 @@ async function renderMessage(m, reactions = []) {
   actions.querySelector(".react-btn").addEventListener("click", () => {
     openEmojiPicker(bubble, m.id);
   });
+  if (m.content) {
+    actions.querySelector(".copy-btn").addEventListener("click", () => {
+      navigator.clipboard.writeText(m.content).then(() => toast("Copied"));
+    });
+  }
   if (isOwn) {
     actions.querySelector(".delete-btn").addEventListener("click", () => deleteMessage(m.id, row));
   }
 
   return row;
+}
+
+function jumpToMessage(id) {
+  const target = document.querySelector(`[data-msg-id="${id}"]`);
+  if (!target) { toast("Older message — load older messages to see it."); return; }
+  target.scrollIntoView({ behavior: "smooth", block: "center" });
+  const bubble = target.querySelector(".bubble");
+  bubble.classList.add("highlight-flash");
+  setTimeout(() => bubble.classList.remove("highlight-flash"), 1500);
 }
 
 function linkify(safeText) {
@@ -493,6 +528,26 @@ function compressImageFile(file) {
   });
 }
 
+async function handlePickedImage(file, labelWhenDone) {
+  const sendBtn = document.getElementById("sendBtn");
+  document.getElementById("attachName").textContent = "Processing photo…";
+  document.getElementById("attachPreview").classList.add("show");
+
+  try {
+    const compressed = await compressImageFile(file);
+    pendingImageFile = compressed;
+    if (pendingImagePreviewUrl) URL.revokeObjectURL(pendingImagePreviewUrl);
+    pendingImagePreviewUrl = URL.createObjectURL(compressed);
+    document.getElementById("attachImg").src = pendingImagePreviewUrl;
+    document.getElementById("attachName").textContent = labelWhenDone;
+    sendBtn.disabled = false;
+  } catch (err) {
+    toast(err.message || "Could not process this photo.");
+    document.getElementById("attachPreview").classList.remove("show");
+    pendingImageFile = null;
+  }
+}
+
 function wireComposer() {
   const input = document.getElementById("msgInput");
   const sendBtn = document.getElementById("sendBtn");
@@ -515,6 +570,14 @@ function wireComposer() {
     }
   });
 
+  input.addEventListener("paste", async (e) => {
+    const item = [...e.clipboardData.items].find(i => i.type.startsWith("image/"));
+    if (!item) return;
+    e.preventDefault();
+    const file = item.getAsFile();
+    if (file) await handlePickedImage(file, "Pasted photo");
+  });
+
   sendBtn.addEventListener("click", () => sendMessage({}));
 
   stickerToggle.addEventListener("click", () => stickerPanel.classList.toggle("show"));
@@ -522,24 +585,7 @@ function wireComposer() {
   imageInput.addEventListener("change", async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-
-    document.getElementById("attachName").textContent = "Processing photo…";
-    document.getElementById("attachPreview").classList.add("show");
-
-    try {
-      const compressed = await compressImageFile(file);
-      pendingImageFile = compressed;
-      if (pendingImagePreviewUrl) URL.revokeObjectURL(pendingImagePreviewUrl);
-      pendingImagePreviewUrl = URL.createObjectURL(compressed);
-      document.getElementById("attachImg").src = pendingImagePreviewUrl;
-      document.getElementById("attachName").textContent = file.name;
-      sendBtn.disabled = false;
-    } catch (err) {
-      toast(err.message || "Could not process this photo.");
-      document.getElementById("attachPreview").classList.remove("show");
-      pendingImageFile = null;
-      imageInput.value = "";
-    }
+    await handlePickedImage(file, file.name);
   });
 
   document.getElementById("removeAttach").addEventListener("click", () => {
@@ -610,11 +656,16 @@ function subscribeRealtime() {
       const nearBottom = isNearBottom();
 
       const day = new Date(m.created_at).toDateString();
-      if (day !== lastRenderedDay) {
+      const dayChanged = day !== lastRenderedDay;
+      if (dayChanged) {
         container.appendChild(buildDateDivider(m.created_at));
         lastRenderedDay = day;
       }
-      container.appendChild(await renderMessage(m, reactions || []));
+      const grouped = !dayChanged && lastRenderedAuthorId === m.user_id &&
+        lastRenderedAt && (new Date(m.created_at) - new Date(lastRenderedAt)) < GROUP_WINDOW_MS;
+      container.appendChild(await renderMessage(m, reactions || [], grouped));
+      lastRenderedAuthorId = m.user_id;
+      lastRenderedAt = m.created_at;
 
       if (m.user_id !== ME.id) clearTypingUser(m.user_id);
 
@@ -685,6 +736,17 @@ function openLightbox(src) {
 }
 function closeLightbox() {
   document.getElementById("lightbox").classList.remove("show");
+}
+
+function wireGlobalKeys() {
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    closeLightbox();
+    document.getElementById("searchPanel").classList.remove("show");
+    document.getElementById("stickerPanel").classList.remove("show");
+    document.querySelectorAll(".emoji-picker").forEach(p => p.remove());
+    if (window.innerWidth <= 760) document.getElementById("membersPanel").classList.remove("open");
+  });
 }
 
 function notifyNewMessage() {
