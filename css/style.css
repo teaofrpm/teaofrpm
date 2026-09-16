@@ -510,8 +510,11 @@ a:hover{ color:var(--bright-red); }
   margin-bottom: 5px;
   background: rgba(0,0,0,.03);
   border-radius: 4px;
-  max-width: 220px; 
   cursor: pointer;
+
+  display: block;
+  max-width: 55vw; 
+  box-sizing: border-box;
   overflow: hidden; 
   text-overflow: ellipsis; 
   white-space: nowrap;
