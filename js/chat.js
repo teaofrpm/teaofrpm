@@ -657,7 +657,7 @@ async function toggleVoiceRecording() {
       stream.getTracks().forEach(t => t.stop());
       clearInterval(recordingTimerInterval);
       btn.classList.remove("recording");
-      btn.textContent = "🎤";
+      btn.textContent = "၊၊||၊";
       const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || "audio/webm" });
       handleRecordedAudio(blob);
     };
