@@ -55,9 +55,11 @@ async function init() {
   document.getElementById("roomNameLabel").textContent = window.TEAOFRPM_CONFIG.ROOM_NAME;
   document.getElementById("headerRoomName").textContent = window.TEAOFRPM_CONFIG.ROOM_NAME;
 
-  await loadStickers();
-  await preloadProfiles();
-  await loadHistory();
+  await Promise.all([
+    loadStickers(),
+    preloadProfiles(),
+    loadHistory()
+  ]);
   subscribeRealtime();
   subscribePresence();
   subscribeProfileUpdates();
