@@ -9,6 +9,7 @@ const profileCache = new Map(); // user_id -> profile (avoids refetching per mes
 let STICKER_URLS = [];
 
 let oldestLoadedAt = null;
+let newestLoadedAt = null;
 let hasMoreHistory = true;
 let lastRenderedDay = null;
 let lastRenderedAuthorId = null;
@@ -20,6 +21,16 @@ let typingUsers = new Map(); // user_id -> { display_name, timeoutId }
 let isTypingBroadcasted = false;
 let typingClearTimer = null;
 let searchDebounceTimer = null;
+
+let pendingAudioBlob = null;
+let pendingAudioPreviewUrl = null;
+let mediaRecorder = null;
+let recordedChunks = [];
+let recordingTimerInterval = null;
+
+let lastOwnMessageId = null;
+let lastOwnMessageAt = null;
+let lastMarkedSeenId = null;
 
 async function init() {
   const session = await requireSession("index.html");
@@ -45,15 +56,22 @@ async function init() {
   document.getElementById("headerRoomName").textContent = window.TEAOFRPM_CONFIG.ROOM_NAME;
 
   await loadStickers();
+  await preloadProfiles();
   await loadHistory();
   subscribeRealtime();
   subscribePresence();
+  subscribeProfileUpdates();
   wireComposer();
   wireHeader();
   wireScrollTracking();
   wireLightbox();
   wireSearch();
   wireGlobalKeys();
+  startBackgroundSync();
+
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) markSeen();
+  });
 }
 
 async function getProfile(userId) {
@@ -80,6 +98,7 @@ async function loadHistory() {
   const ordered = [...msgs].reverse();
   hasMoreHistory = msgs.length === PAGE_SIZE;
   oldestLoadedAt = ordered.length ? ordered[0].created_at : null;
+  newestLoadedAt = ordered.length ? ordered[ordered.length - 1].created_at : newestLoadedAt;
 
   const ids = [...new Set(ordered.map(m => m.user_id))];
   await Promise.all(ids.map(getProfile));
@@ -94,6 +113,7 @@ async function loadHistory() {
   await appendMessages(container, ordered, reactionsByMsg, "append");
   updateLoadMoreButton();
   scrollToBottom();
+  renderSeenBy();
 }
 
 async function fetchReactions(ids) {
@@ -231,6 +251,7 @@ async function renderMessage(m, reactions = [], grouped = false) {
   meta.className = "msg-meta";
   meta.innerHTML = `
     <span class="msg-name">${escapeHTML(author?.display_name || "Unknown")}</span>
+    ${author?.username ? `<span class="msg-username">@${escapeHTML(author.username)}</span>` : ""}
     ${isOwnerMsg ? `<span class="owner-badge">Owner</span>` : ""}
     <span>${formatTime(m.created_at)}</span>
   `;
@@ -265,6 +286,14 @@ async function renderMessage(m, reactions = [], grouped = false) {
     bubble.appendChild(img);
   }
 
+  if (m.audio_url) {
+    const audio = document.createElement("audio");
+    audio.className = "chat-audio";
+    audio.controls = true;
+    audio.src = m.audio_url;
+    bubble.appendChild(audio);
+  }
+
   if (m.image_url) {
     const img = document.createElement("img");
     img.className = "chat-img";
@@ -276,8 +305,9 @@ async function renderMessage(m, reactions = [], grouped = false) {
 
   if (m.content) {
     const txt = document.createElement("div");
-    txt.innerHTML = linkify(escapeHTML(m.content));
-    if (m.image_url || m.sticker_url) txt.style.marginTop = "6px";
+    txt.className = "msg-text";
+    txt.innerHTML = linkify(escapeHTML(m.content)) + (m.edited_at ? ` <span class="edited-tag">(edited)</span>` : "");
+    if (m.image_url || m.sticker_url || m.audio_url) txt.style.marginTop = "6px";
     bubble.appendChild(txt);
   }
 
@@ -287,6 +317,7 @@ async function renderMessage(m, reactions = [], grouped = false) {
     <button class="react-btn" title="React">🙂+</button>
     <button class="reply-btn" title="Reply">↩</button>
     ${m.content ? `<button class="copy-btn" title="Copy text">⧉</button>` : ""}
+    ${isOwn && m.content ? `<button class="edit-btn" title="Edit">✎</button>` : ""}
     ${isOwn ? `<button class="delete-btn" title="Delete">🗑</button>` : ""}
   `;
   bubble.appendChild(actions);
@@ -311,67 +342,16 @@ async function renderMessage(m, reactions = [], grouped = false) {
       navigator.clipboard.writeText(m.content).then(() => toast("Copied"));
     });
   }
+  if (isOwn && m.content) {
+    actions.querySelector(".edit-btn").addEventListener("click", () => startEditMessage(m, bubble));
+  }
   if (isOwn) {
     actions.querySelector(".delete-btn").addEventListener("click", () => deleteMessage(m.id, row));
+    lastOwnMessageId = m.id;
+    lastOwnMessageAt = m.created_at;
   }
 
-  wireMessageTouch(bubble, row, m.id);
-
   return row;
-}
-
-/* ---------------------------------------------------------
-   TOUCH / LONG-PRESS: on mobile there's no hover, so a
-   press-and-hold on the bubble reveals the action panel
-   (react/reply/copy/delete — same row that shows on desktop
-   hover). A quick tap just closes it again. Any real finger
-   movement before the hold threshold cancels it and lets the
-   normal page scroll/swipe through untouched — these listeners
-   are all "passive" (never call preventDefault), so they never
-   block or stutter scrolling.
---------------------------------------------------------- */
-function wireMessageTouch(bubble, row, messageId) {
-  const LONG_PRESS_MS = 450;
-  const MOVE_THRESHOLD = 10;
-  let timer = null;
-  let startX = 0, startY = 0;
-  let longPressFired = false;
-
-  bubble.addEventListener("touchstart", (e) => {
-    if (!e.touches.length) return;
-    longPressFired = false;
-    startX = e.touches[0].clientX;
-    startY = e.touches[0].clientY;
-    clearTimeout(timer);
-    timer = setTimeout(() => {
-      longPressFired = true;
-      if (navigator.vibrate) navigator.vibrate(30);
-      document.querySelectorAll(".msg-row.show-actions").forEach((r) => r.classList.remove("show-actions"));
-      row.classList.add("show-actions");
-    }, LONG_PRESS_MS);
-  }, { passive: true });
-
-  bubble.addEventListener("touchmove", (e) => {
-    if (!e.touches.length) return;
-    const dx = Math.abs(e.touches[0].clientX - startX);
-    const dy = Math.abs(e.touches[0].clientY - startY);
-    if (dx > MOVE_THRESHOLD || dy > MOVE_THRESHOLD) clearTimeout(timer);
-  }, { passive: true });
-
-  ["touchend", "touchcancel"].forEach((evt) =>
-    bubble.addEventListener(evt, () => clearTimeout(timer), { passive: true })
-  );
-
-  bubble.addEventListener("click", (e) => {
-    if (longPressFired) { longPressFired = false; return; }
-    if (e.target.closest("img, a, .msg-actions, .reply-preview")) return;
-    row.classList.remove("show-actions"); // a plain tap just closes any open panel
-  });
-
-  document.addEventListener("click", (e) => {
-    if (!row.classList.contains("show-actions")) return;
-    if (!row.contains(e.target)) row.classList.remove("show-actions");
-  });
 }
 
 function jumpToMessage(id) {
@@ -396,6 +376,46 @@ async function deleteMessage(id, row) {
   const { error } = await sb.from("messages").update({ deleted: true }).eq("id", id).eq("user_id", ME.id);
   if (error) { toast(error.message || "Could not delete message."); return; }
   row.remove();
+}
+
+function startEditMessage(m, bubble) {
+  const textEl = bubble.querySelector(".msg-text");
+  if (!textEl || bubble.querySelector(".edit-box")) return;
+
+  const editBox = document.createElement("textarea");
+  editBox.className = "edit-box";
+  editBox.rows = 2;
+  editBox.value = m.content || "";
+  textEl.replaceWith(editBox);
+  editBox.focus();
+  editBox.setSelectionRange(editBox.value.length, editBox.value.length);
+
+  const actionsBar = document.createElement("div");
+  actionsBar.className = "edit-actions";
+  actionsBar.innerHTML = `<button class="edit-cancel">Cancel</button><button class="edit-save">Save</button>`;
+  editBox.insertAdjacentElement("afterend", actionsBar);
+
+  function restore(content) {
+    const restored = document.createElement("div");
+    restored.className = "msg-text";
+    restored.innerHTML = linkify(escapeHTML(content)) + (m.edited_at ? ` <span class="edited-tag">(edited)</span>` : "");
+    editBox.replaceWith(restored);
+    actionsBar.remove();
+  }
+
+  actionsBar.querySelector(".edit-cancel").addEventListener("click", () => restore(m.content));
+
+  actionsBar.querySelector(".edit-save").addEventListener("click", async () => {
+    const newText = editBox.value.trim();
+    if (!newText) { toast("Message can't be empty."); return; }
+    if (newText === m.content) { restore(m.content); return; }
+    const editedAt = new Date().toISOString();
+    const { error } = await sb.from("messages").update({ content: newText, edited_at: editedAt }).eq("id", m.id).eq("user_id", ME.id);
+    if (error) { toast(error.message || "Could not edit message."); return; }
+    m.content = newText;
+    m.edited_at = editedAt;
+    restore(newText);
+  });
 }
 
 function previewText(m) {
@@ -586,6 +606,7 @@ function compressImageFile(file) {
 
 async function handlePickedImage(file, labelWhenDone) {
   const sendBtn = document.getElementById("sendBtn");
+  clearPendingAudio();
   document.getElementById("attachName").textContent = "Processing photo…";
   document.getElementById("attachPreview").classList.add("show");
 
@@ -604,6 +625,67 @@ async function handlePickedImage(file, labelWhenDone) {
   }
 }
 
+function clearPendingAudio() {
+  pendingAudioBlob = null;
+  if (pendingAudioPreviewUrl) { URL.revokeObjectURL(pendingAudioPreviewUrl); pendingAudioPreviewUrl = null; }
+  document.getElementById("audioPreview").classList.remove("show");
+}
+
+async function toggleVoiceRecording() {
+  const btn = document.getElementById("voiceBtn");
+
+  if (mediaRecorder && mediaRecorder.state === "recording") {
+    mediaRecorder.stop();
+    return;
+  }
+
+  if (!navigator.mediaDevices || !window.MediaRecorder) {
+    toast("Voice notes aren't supported in this browser.");
+    return;
+  }
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const mimeType = ["audio/mp4", "audio/webm"].find(t => MediaRecorder.isTypeSupported(t)) || "";
+    mediaRecorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+    recordedChunks = [];
+
+    mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) recordedChunks.push(e.data); };
+    mediaRecorder.onstop = () => {
+      stream.getTracks().forEach(t => t.stop());
+      clearInterval(recordingTimerInterval);
+      btn.classList.remove("recording");
+      btn.textContent = "🎤";
+      const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || "audio/webm" });
+      handleRecordedAudio(blob);
+    };
+
+    mediaRecorder.start();
+    const startedAt = Date.now();
+    btn.classList.add("recording");
+    recordingTimerInterval = setInterval(() => {
+      const secs = Math.floor((Date.now() - startedAt) / 1000);
+      btn.textContent = `⏹ ${secs}s`;
+      if (secs >= 120) mediaRecorder.stop();
+    }, 500);
+  } catch (err) {
+    toast("Microphone access denied or unavailable.");
+  }
+}
+
+function handleRecordedAudio(blob) {
+  pendingImageFile = null;
+  if (pendingImagePreviewUrl) { URL.revokeObjectURL(pendingImagePreviewUrl); pendingImagePreviewUrl = null; }
+  document.getElementById("attachPreview").classList.remove("show");
+
+  pendingAudioBlob = blob;
+  if (pendingAudioPreviewUrl) URL.revokeObjectURL(pendingAudioPreviewUrl);
+  pendingAudioPreviewUrl = URL.createObjectURL(blob);
+  document.getElementById("audioPreviewPlayer").src = pendingAudioPreviewUrl;
+  document.getElementById("audioPreview").classList.add("show");
+  document.getElementById("sendBtn").disabled = false;
+}
+
 function wireComposer() {
   const input = document.getElementById("msgInput");
   const sendBtn = document.getElementById("sendBtn");
@@ -614,7 +696,7 @@ function wireComposer() {
   input.addEventListener("input", () => {
     input.style.height = "auto";
     input.style.height = Math.min(input.scrollHeight, 120) + "px";
-    sendBtn.disabled = !(input.value.trim() || pendingImageFile);
+    sendBtn.disabled = !(input.value.trim() || pendingImageFile || pendingAudioBlob);
   });
 
   wireTypingBroadcast(input);
@@ -649,7 +731,14 @@ function wireComposer() {
     if (pendingImagePreviewUrl) { URL.revokeObjectURL(pendingImagePreviewUrl); pendingImagePreviewUrl = null; }
     imageInput.value = "";
     document.getElementById("attachPreview").classList.remove("show");
-    sendBtn.disabled = !input.value.trim();
+    sendBtn.disabled = !(input.value.trim() || pendingAudioBlob);
+  });
+
+  document.getElementById("voiceBtn").addEventListener("click", toggleVoiceRecording);
+
+  document.getElementById("removeAudioAttach").addEventListener("click", () => {
+    clearPendingAudio();
+    sendBtn.disabled = !(input.value.trim() || pendingImageFile);
   });
 }
 
@@ -658,11 +747,12 @@ async function sendMessage({ sticker }) {
   const sendBtn = document.getElementById("sendBtn");
   const text = input.value.trim();
 
-  if (!text && !pendingImageFile && !sticker) return;
+  if (!text && !pendingImageFile && !pendingAudioBlob && !sticker) return;
 
   sendBtn.disabled = true;
 
   let image_url = null;
+  let audio_url = null;
   try {
     if (pendingImageFile) {
       const path = `${ME.id}/${Date.now()}.jpg`;
@@ -672,12 +762,22 @@ async function sendMessage({ sticker }) {
       if (upErr) throw upErr;
       const { data: pub } = sb.storage.from("chat-images").getPublicUrl(path);
       image_url = pub.publicUrl;
+    } else if (pendingAudioBlob) {
+      const ext = (pendingAudioBlob.type || "").includes("mp4") ? "m4a" : "webm";
+      const path = `${ME.id}/${Date.now()}.${ext}`;
+      const { error: upErr } = await sb.storage.from("voice-notes").upload(path, pendingAudioBlob, {
+        contentType: pendingAudioBlob.type || "audio/webm",
+      });
+      if (upErr) throw upErr;
+      const { data: pub } = sb.storage.from("voice-notes").getPublicUrl(path);
+      audio_url = pub.publicUrl;
     }
 
     const payload = {
       user_id: ME.id,
       content: text || null,
       image_url,
+      audio_url,
       sticker_url: sticker || null,
       reply_to: replyingTo ? replyingTo.id : null,
     };
@@ -691,6 +791,7 @@ async function sendMessage({ sticker }) {
     if (pendingImagePreviewUrl) { URL.revokeObjectURL(pendingImagePreviewUrl); pendingImagePreviewUrl = null; }
     document.getElementById("imageInput").value = "";
     document.getElementById("attachPreview").classList.remove("show");
+    clearPendingAudio();
     document.getElementById("stickerPanel").classList.remove("show");
     clearReply();
     clearTimeout(typingClearTimer);
@@ -698,8 +799,44 @@ async function sendMessage({ sticker }) {
   } catch (e) {
     toast(e.message || "Message failed to send.");
   } finally {
-    sendBtn.disabled = !(input.value.trim() || pendingImageFile);
+    sendBtn.disabled = !(input.value.trim() || pendingImageFile || pendingAudioBlob);
   }
+}
+
+async function appendLiveMessage(m, reactions) {
+  if (document.querySelector(`[data-msg-id="${m.id}"]`)) return;
+
+  const container = document.getElementById("messages");
+  const nearBottom = isNearBottom();
+
+  const day = new Date(m.created_at).toDateString();
+  const dayChanged = day !== lastRenderedDay;
+  if (dayChanged) {
+    container.appendChild(buildDateDivider(m.created_at));
+    lastRenderedDay = day;
+  }
+  const grouped = !dayChanged && lastRenderedAuthorId === m.user_id &&
+    lastRenderedAt && (new Date(m.created_at) - new Date(lastRenderedAt)) < GROUP_WINDOW_MS;
+  container.appendChild(await renderMessage(m, reactions || [], grouped));
+  lastRenderedAuthorId = m.user_id;
+  lastRenderedAt = m.created_at;
+  if (!newestLoadedAt || new Date(m.created_at) > new Date(newestLoadedAt)) {
+    newestLoadedAt = m.created_at;
+  }
+
+  if (m.user_id !== ME.id) clearTypingUser(m.user_id);
+
+  if (nearBottom) {
+    scrollToBottom();
+  } else {
+    showJumpToLatest();
+  }
+
+  if (m.user_id !== ME.id && document.hidden) {
+    notifyNewMessage();
+  }
+
+  renderSeenBy();
 }
 
 function subscribeRealtime() {
@@ -708,38 +845,19 @@ function subscribeRealtime() {
       const m = payload.new;
       await getProfile(m.user_id);
       const { data: reactions } = await sb.from("message_reactions").select("*").eq("message_id", m.id);
-      const container = document.getElementById("messages");
-      const nearBottom = isNearBottom();
-
-      const day = new Date(m.created_at).toDateString();
-      const dayChanged = day !== lastRenderedDay;
-      if (dayChanged) {
-        container.appendChild(buildDateDivider(m.created_at));
-        lastRenderedDay = day;
-      }
-      const grouped = !dayChanged && lastRenderedAuthorId === m.user_id &&
-        lastRenderedAt && (new Date(m.created_at) - new Date(lastRenderedAt)) < GROUP_WINDOW_MS;
-      container.appendChild(await renderMessage(m, reactions || [], grouped));
-      lastRenderedAuthorId = m.user_id;
-      lastRenderedAt = m.created_at;
-
-      if (m.user_id !== ME.id) clearTypingUser(m.user_id);
-
-      if (nearBottom) {
-        scrollToBottom();
-      } else {
-        showJumpToLatest();
-      }
-
-      if (m.user_id !== ME.id && document.hidden) {
-        notifyNewMessage();
-      }
+      await appendLiveMessage(m, reactions || []);
     })
     .on("postgres_changes", { event: "UPDATE", schema: "public", table: "messages" }, (payload) => {
       const m = payload.new;
+      const row = document.querySelector(`[data-msg-id="${m.id}"]`);
+      if (!row) return;
       if (m.deleted) {
-        const row = document.querySelector(`[data-msg-id="${m.id}"]`);
-        if (row) row.remove();
+        row.remove();
+        return;
+      }
+      const textEl = row.querySelector(".msg-text");
+      if (textEl && !row.querySelector(".edit-box")) {
+        textEl.innerHTML = linkify(escapeHTML(m.content || "")) + (m.edited_at ? ` <span class="edited-tag">(edited)</span>` : "");
       }
     })
     .subscribe();
@@ -757,6 +875,32 @@ function subscribeRealtime() {
     .subscribe();
 }
 
+function startBackgroundSync() {
+  setInterval(syncNewMessages, 10000);
+}
+
+async function syncNewMessages() {
+  if (!newestLoadedAt) return;
+
+  const { data: msgs, error } = await sb
+    .from("messages")
+    .select("*")
+    .eq("deleted", false)
+    .gt("created_at", newestLoadedAt)
+    .order("created_at", { ascending: true })
+    .limit(50);
+
+  if (error || !msgs || !msgs.length) return;
+
+  const ids = [...new Set(msgs.map(m => m.user_id))];
+  await Promise.all(ids.map(getProfile));
+
+  for (const m of msgs) {
+    const { data: reactions } = await sb.from("message_reactions").select("*").eq("message_id", m.id);
+    await appendLiveMessage(m, reactions || []);
+  }
+}
+
 function isNearBottom() {
   const c = document.getElementById("messages");
   return c.scrollHeight - c.scrollTop - c.clientHeight < 160;
@@ -764,6 +908,7 @@ function isNearBottom() {
 function scrollToBottom() {
   const c = document.getElementById("messages");
   c.scrollTop = c.scrollHeight;
+  markSeen();
 }
 
 function wireScrollTracking() {
@@ -882,6 +1027,59 @@ function renderTypingIndicator() {
   el.classList.add("show");
 }
 
+async function markSeen() {
+  if (!ME) return;
+  if (document.hidden || !isNearBottom()) return;
+  const rows = document.querySelectorAll("#messages .msg-row[data-msg-id]");
+  if (!rows.length) return;
+  const lastId = rows[rows.length - 1].dataset.msgId;
+  if (lastId === lastMarkedSeenId) return;
+  lastMarkedSeenId = lastId;
+
+  const now = new Date().toISOString();
+  const { error } = await sb.from("profiles").update({ last_read_at: now }).eq("id", ME.id);
+  if (!error) {
+    const mine = profileCache.get(ME.id) || {};
+    profileCache.set(ME.id, { ...mine, last_read_at: now });
+  }
+}
+
+function renderSeenBy() {
+  document.querySelectorAll(".seen-by-line").forEach(el => el.remove());
+  if (!lastOwnMessageId || !lastOwnMessageAt) return;
+
+  const seenNames = [];
+  for (const [userId, p] of profileCache.entries()) {
+    if (userId === ME.id) continue;
+    if (p.last_read_at && new Date(p.last_read_at) >= new Date(lastOwnMessageAt)) {
+      seenNames.push(p.display_name);
+    }
+  }
+  if (!seenNames.length) return;
+
+  const row = document.querySelector(`[data-msg-id="${lastOwnMessageId}"]`);
+  if (!row) return;
+  const wrap = row.querySelector(".msg-bubble-wrap");
+  const line = document.createElement("div");
+  line.className = "seen-by-line";
+  line.textContent = `Seen by ${seenNames.join(", ")}`;
+  wrap.appendChild(line);
+}
+
+async function preloadProfiles() {
+  const { data } = await sb.from("profiles").select("*").eq("is_verified", true);
+  (data || []).forEach(p => profileCache.set(p.id, p));
+}
+
+function subscribeProfileUpdates() {
+  sb.channel("public:profiles")
+    .on("postgres_changes", { event: "UPDATE", schema: "public", table: "profiles" }, (payload) => {
+      profileCache.set(payload.new.id, payload.new);
+      renderSeenBy();
+    })
+    .subscribe();
+}
+
 function subscribePresence() {
   presenceChannel = sb.channel("teaofrpm-online", {
     config: { presence: { key: ME.id } },
@@ -905,6 +1103,7 @@ function subscribePresence() {
           role: ME.role,
           online_at: new Date().toISOString(),
         });
+        markSeen();
       }
     });
 
