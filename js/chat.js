@@ -1256,6 +1256,6 @@ async function runMessageSearch(term) {
 
 setTimeout(() => {
   document.getElementById("loadingOverlay")?.classList.add("hide");
-}, 8000);
+}, 3000);
 
 init();
