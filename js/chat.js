@@ -72,6 +72,8 @@ async function init() {
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) markSeen();
   });
+
+  document.getElementById("loadingOverlay").classList.add("hide");
 }
 
 async function getProfile(userId) {
@@ -655,7 +657,7 @@ async function toggleVoiceRecording() {
       stream.getTracks().forEach(t => t.stop());
       clearInterval(recordingTimerInterval);
       btn.classList.remove("recording");
-      btn.textContent = "၊၊||၊";
+      btn.textContent = "🎤";
       const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || "audio/webm" });
       handleRecordedAudio(blob);
     };
@@ -1075,6 +1077,7 @@ function subscribeProfileUpdates() {
   sb.channel("public:profiles")
     .on("postgres_changes", { event: "UPDATE", schema: "public", table: "profiles" }, (payload) => {
       profileCache.set(payload.new.id, payload.new);
+      renderMemberList();
       renderSeenBy();
     })
     .subscribe();
@@ -1112,26 +1115,53 @@ function subscribePresence() {
   });
 }
 
+function lastSeenLabel(ts) {
+  if (!ts) return "Offline";
+  const mins = Math.floor((Date.now() - new Date(ts).getTime()) / 60000);
+  if (mins < 1) return "Active just now";
+  if (mins < 60) return `Last seen ${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `Last seen ${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return `Last seen ${days}d ago`;
+}
+
 function renderMemberList() {
   const list = document.getElementById("memberList");
   const count = onlineMembers.size;
   document.getElementById("onlineCountText").textContent = `${count} online`;
   document.getElementById("headerOnlineText").textContent = `${count} online`;
 
+  const allMembers = [...profileCache.values()].filter(p => p.is_verified);
+  allMembers.sort((a, b) => {
+    const aOnline = onlineMembers.has(a.id);
+    const bOnline = onlineMembers.has(b.id);
+    if (aOnline !== bOnline) return aOnline ? -1 : 1;
+    return (a.display_name || "").localeCompare(b.display_name || "");
+  });
+
   list.innerHTML = "";
-  for (const [userId, info] of onlineMembers.entries()) {
+  for (const p of allMembers) {
+    const isOnline = onlineMembers.has(p.id);
     const row = document.createElement("div");
-    row.className = `member-row ${userId === ME.id ? "you" : ""}`;
+    row.className = `member-row ${p.id === ME.id ? "you" : ""}`;
+
     const av = document.createElement("div");
-    av.className = "avatar";
-    av.style.background = colorFromName(info.display_name);
-    av.style.width = "24px"; av.style.height = "24px"; av.style.fontSize = "10px";
-    av.textContent = initials(info.display_name);
+    av.className = `avatar ${isOnline ? "is-online" : ""}`;
+    av.style.background = colorFromName(p.display_name);
+    av.style.width = "26px"; av.style.height = "26px"; av.style.fontSize = "10.5px";
+    av.textContent = initials(p.display_name);
     row.appendChild(av);
-    const name = document.createElement("span");
-    name.textContent = info.display_name + (userId === ME.id ? " (you)" : "");
-    row.appendChild(name);
-    if (info.role === "owner") {
+
+    const info = document.createElement("div");
+    info.className = "member-info";
+    info.innerHTML = `
+      <span class="member-name">${escapeHTML(p.display_name)}${p.id === ME.id ? " (you)" : ""}</span>
+      <span class="member-status ${isOnline ? "online" : ""}">${isOnline ? "Online" : lastSeenLabel(p.last_read_at)}</span>
+    `;
+    row.appendChild(info);
+
+    if (p.role === "owner") {
       const tag = document.createElement("span");
       tag.className = "owner-tag";
       tag.textContent = "OWNER";
@@ -1221,5 +1251,9 @@ async function runMessageSearch(term) {
     results.appendChild(row);
   }
 }
+
+setTimeout(() => {
+  document.getElementById("loadingOverlay")?.classList.add("hide");
+}, 8000);
 
 init();
