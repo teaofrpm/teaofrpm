@@ -137,3 +137,12 @@ async function getProfileByUsername(username) {
   }
   return data;
 }
+
+const profileCache = new Map(); // user_id -> profile (avoids refetching per message)
+
+async function getProfile(userId) {
+  if (profileCache.has(userId)) return profileCache.get(userId);
+  const { data } = await sb.from("profiles").select("*").eq("id", userId).single();
+  if (data) profileCache.set(userId, data);
+  return data;
+}
