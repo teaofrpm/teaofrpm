@@ -14,8 +14,7 @@ async function init() {
 
     ME = await getMyProfile();
     if (!ME) {
-      document.getElementById("loadingOverlay").classList.add("hide");
-      document.getElementById("profileScroll").innerHTML = `<div class="locked-posts">Profile row missing in database. Please check your Supabase 'profiles' table.</div>`;
+      document.getElementById("profileScroll").innerHTML = `<div class="locked-posts">Profile not found in database.</div>`;
       return;
     }
 
@@ -30,7 +29,6 @@ async function init() {
       return;
     }
 
-
     const params = new URLSearchParams(window.location.search);
     const rawUsername = params.get("u") || ME.username || "";
     const targetUsername = rawUsername.toLowerCase();
@@ -39,9 +37,35 @@ async function init() {
     
     if (!viewedUser) {
       document.getElementById("profileScroll").innerHTML = `<div class="locked-posts">User not found.</div>`;
-      document.getElementById("loadingOverlay").classList.add("hide");
       return;
     }
+
+    isOwnProfile = viewedUser.id === ME.id;
+    document.getElementById("profileTopTitle").textContent = isOwnProfile ? "Your profile" : `@${viewedUser.username}`;
+
+    await loadFollowState();
+    renderProfileHeader();
+    await renderStats();
+    renderActions();
+    wireEditProfile();
+    wireNewPost();
+    wirePfpUpload();
+    wireFollowListModal();
+    await loadPosts();
+
+  } catch (err) {
+
+    console.error("Profile Load Error:", err);
+    document.getElementById("profileScroll").innerHTML = `
+      <div style="padding: 20px; color: red; text-align: center;">
+        <b>Error Found:</b> ${err.message}
+      </div>`;
+  } finally {
+  
+    const loader = document.getElementById("loadingOverlay");
+    if (loader) loader.classList.add("hide");
+  }
+}
 
     isOwnProfile = viewedUser.id === ME.id;
     document.getElementById("profileTopTitle").textContent = isOwnProfile ? "Your profile" : `@${viewedUser.username}`;
