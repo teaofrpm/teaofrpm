@@ -10,9 +10,13 @@ let pendingPostImagePreviewUrl = null;
 async function init() {
   const session = await requireSession("index.html");
   if (!session) return;
-
-  ME = await getMyProfile();
-  if (!ME) return;
+  
+ME = await getMyProfile();
+  if (!ME) {
+    document.getElementById("loadingOverlay").classList.add("hide");
+    document.getElementById("profileScroll").innerHTML = `<div class="locked-posts">Error loading profile. Database check karo.</div>`;
+    return;
+  }
 
   if (ME.banned) {
     toast("This account has been banned.");
@@ -437,6 +441,6 @@ async function openFollowList(type) {
 
 setTimeout(() => {
   document.getElementById("loadingOverlay")?.classList.add("hide");
-}, 8000);
+}, 3000);
 
 init();
