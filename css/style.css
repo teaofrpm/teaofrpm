@@ -941,6 +941,61 @@ a:hover{ color:var(--bright-red); }
   cursor:pointer; font-size:14px;
 }
 
+.post-engage-row{ display:flex; gap:16px; margin-top:10px; }
+.like-btn, .comment-toggle-btn{
+  background:none; border:none; cursor:pointer;
+  font-size:13px; color:var(--text-muted);
+  display:flex; align-items:center; gap:4px;
+}
+.like-btn.liked{ color:var(--bright-red); font-weight:700; }
+
+.comments-section{ margin-top:10px; border-top:1px solid var(--border-soft); padding-top:10px; }
+.comment-row{ font-size:13px; color:var(--text-dark); margin-bottom:6px; line-height:1.4; }
+.comment-row b{ color:var(--deep-royal); margin-right:4px; }
+.comment-input-row{ display:flex; gap:8px; margin-top:6px; }
+.comment-input-row input{
+  flex:1; background:var(--warm-cream); border:1px solid var(--border-soft);
+  border-radius:8px; padding:7px 10px; font-size:13px; outline:none; font-family:var(--sans);
+}
+.comment-input-row button{
+  background:var(--gold-deep); color:#3a2400; border:none;
+  border-radius:8px; padding:7px 14px; font-size:12.5px; font-weight:700; cursor:pointer;
+}
+
+.requests-panel{
+  background:var(--white);
+  border:1px solid var(--gold-deep);
+  border-radius:var(--radius);
+  padding:14px 16px;
+  margin-top:16px;
+  text-align:left;
+}
+.requests-header{ font-weight:700; color:var(--deep-royal); font-size:14px; margin-bottom:10px; }
+.request-row{ display:flex; align-items:center; gap:10px; padding:6px 0; }
+.request-info{ flex:1; min-width:0; }
+.request-actions{ display:flex; gap:6px; }
+.request-accept, .request-decline{
+  border:none; border-radius:999px; padding:5px 12px;
+  font-size:12px; font-weight:700; cursor:pointer;
+}
+.request-accept{ background:var(--gold-deep); color:#3a2400; }
+.request-decline{ background:rgba(0,0,0,.08); color:var(--text-dark); }
+
+.discover-search-box{ padding:14px 20px 0; }
+.discover-search-box input{
+  width:100%;
+  background:var(--white);
+  border:1px solid var(--border-soft);
+  border-radius:999px;
+  padding:11px 16px;
+  font-size:14.5px;
+  font-family:var(--sans);
+  outline:none;
+}
+.discover-search-box input:focus{ border-color:var(--aqua); box-shadow:0 0 0 3px rgba(6,182,212,.15); }
+.discover-section-label{ font-size:12px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:.3px; margin-bottom:8px; }
+.discover-row{ padding:10px 8px; }
+
 .follow-list-modal{
   display:none;
   position:fixed; inset:0; z-index:90;
