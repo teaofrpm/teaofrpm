@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#8B0000" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<link rel="apple-touch-icon" href="images/logo.png" />
+<title>Profile — 𝓉𝑒𝒶𝑜𝒻𝓇𝓅𝓂</title>
+<link rel="icon" href="images/logo.png" />
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="loading-inner">
+    <div class="loading-spinner"></div>
+    <div class="loading-text">𝓉𝑒𝒶𝑜𝒻𝓇𝓅𝓂</div>
+  </div>
+</div>
+
+<div class="profile-shell">
+
+  <div class="profile-topbar">
+    <a href="chat.html" class="header-icon-btn" title="Back to chat">←</a>
+    <h2 id="profileTopTitle">Profile</h2>
+    <span style="width:32px;"></span>
+  </div>
+
+  <div class="profile-scroll" id="profileScroll">
+
+    <div class="profile-head">
+      <div class="pfp-wrap">
+        <div class="pfp" id="pfpCircle"></div>
+        <label class="pfp-edit-btn" id="pfpEditBtn" for="pfpInput" style="display:none;">✎</label>
+        <input type="file" id="pfpInput" accept="image/*" style="display:none;" />
+      </div>
+
+      <div class="profile-names">
+        <div class="profile-display-name" id="profileDisplayName"></div>
+        <div class="profile-username" id="profileUsername"></div>
+        <span class="private-badge" id="privateBadge" style="display:none;">🔒 Private account</span>
+      </div>
+
+      <div class="profile-bio" id="profileBio"></div>
+
+      <div class="profile-stats">
+        <div class="stat-item" id="statPosts"><b id="postsCount">0</b><span>Posts</span></div>
+        <div class="stat-item" id="statFollowers"><b id="followersCount">0</b><span>Followers</span></div>
+        <div class="stat-item" id="statFollowing"><b id="followingCount">0</b><span>Following</span></div>
+      </div>
+
+      <div class="profile-actions" id="profileActions"></div>
+    </div>
+
+    <div class="edit-panel" id="editPanel" style="display:none;">
+      <div class="field">
+        <label>Display name</label>
+        <input id="editDisplayName" type="text" maxlength="24" />
+      </div>
+      <div class="field">
+        <label>Username</label>
+        <input id="editUsername" type="text" maxlength="20" autocapitalize="off" />
+      </div>
+      <div class="field">
+        <label>Bio</label>
+        <textarea id="editBio" rows="3" maxlength="160" style="resize:none; font-family:var(--sans); font-size:15px; padding:12px 14px; border-radius:8px; border:1px solid var(--border-soft); background:var(--white); outline:none;"></textarea>
+      </div>
+      <label class="private-toggle-row">
+        <input type="checkbox" id="editPrivate" />
+        <span>Private account — only approved followers see your posts</span>
+      </label>
+      <p class="error-text" id="editError"></p>
+      <div style="display:flex; gap:10px;">
+        <button class="btn-outline btn" id="cancelEditBtn" style="flex:1;">Cancel</button>
+        <button class="btn" id="saveEditBtn" style="flex:1;">Save</button>
+      </div>
+    </div>
+
+    <div class="new-post-box" id="newPostBox" style="display:none;">
+      <textarea id="newPostText" rows="2" placeholder="Share something…"></textarea>
+      <div class="attach-preview" id="postAttachPreview">
+        <img id="postAttachImg" />
+        <button id="removePostAttach">Remove</button>
+      </div>
+      <div class="new-post-row">
+        <label class="icon-btn" id="postImageBtn" for="postImageInput" title="Add photo">◉°</label>
+        <input type="file" id="postImageInput" accept="image/*" style="display:none;" />
+        <button class="btn btn-small" id="publishPostBtn" style="margin-left:auto;">Post</button>
+      </div>
+    </div>
+
+    <div class="locked-posts" id="lockedPosts" style="display:none;">
+      🔒 This account is private. Follow to see their posts.
+    </div>
+
+    <div class="posts-list" id="postsList"></div>
+
+  </div>
+
+  <nav class="bottom-nav">
+    <a href="chat.html"><span class="nav-icon">💬</span>Chat</a>
+    <a href="profile.html" class="active"><span class="nav-icon">👤</span>Profile</a>
+  </nav>
+</div>
+
+<div class="follow-list-modal" id="followListModal">
+  <div class="follow-list-card">
+    <div class="follow-list-header">
+      <span id="followListTitle">Followers</span>
+      <button id="closeFollowList">✕</button>
+    </div>
+    <div class="follow-list-body" id="followListBody"></div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="js/config.js"></script>
+<script src="js/supabase-client.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/profile.js"></script>
+</body>
+</html>
