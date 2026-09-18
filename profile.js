@@ -1,4 +1,3 @@
-
 let ME = null;
 let viewedUser = null;
 let isOwnProfile = false;
@@ -34,7 +33,7 @@ async function init() {
     const targetUsername = rawUsername.toLowerCase();
 
     viewedUser = targetUsername === (ME.username || "").toLowerCase() ? ME : await getProfileByUsername(targetUsername);
-    
+
     if (!viewedUser) {
       document.getElementById("profileScroll").innerHTML = `<div class="locked-posts">User not found.</div>`;
       return;
@@ -54,56 +53,15 @@ async function init() {
     await loadPosts();
 
   } catch (err) {
-
     console.error("Profile Load Error:", err);
     document.getElementById("profileScroll").innerHTML = `
       <div style="padding: 20px; color: red; text-align: center;">
         <b>Error Found:</b> ${err.message}
       </div>`;
   } finally {
-  
     const loader = document.getElementById("loadingOverlay");
     if (loader) loader.classList.add("hide");
   }
-}
-
-    isOwnProfile = viewedUser.id === ME.id;
-    document.getElementById("profileTopTitle").textContent = isOwnProfile ? "Your profile" : `@${viewedUser.username}`;
-
-    await loadFollowState();
-    renderProfileHeader();
-    await renderStats();
-    renderActions();
-    wireEditProfile();
-    wireNewPost();
-    wirePfpUpload();
-    wireFollowListModal();
-    await loadPosts();
-
-  } catch (err) {
-    console.error("Profile Load Error:", err);
-    document.getElementById("profileScroll").innerHTML = `<div class="locked-posts">JavaScript Error: ${err.message}</div>`;
-  } finally {
-    
-    const loader = document.getElementById("loadingOverlay");
-    if (loader) loader.classList.add("hide");
-  }
-}
-
-  isOwnProfile = viewedUser.id === ME.id;
-  document.getElementById("profileTopTitle").textContent = isOwnProfile ? "Your profile" : `@${viewedUser.username}`;
-
-  await loadFollowState();
-  renderProfileHeader();
-  await renderStats();
-  renderActions();
-  wireEditProfile();
-  wireNewPost();
-  wirePfpUpload();
-  wireFollowListModal();
-  await loadPosts();
-
-  document.getElementById("loadingOverlay").classList.add("hide");
 }
 
 function renderProfileHeader() {
