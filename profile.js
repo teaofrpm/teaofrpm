@@ -491,6 +491,6 @@ async function openFollowList(type) {
 
 setTimeout(() => {
   document.getElementById("loadingOverlay")?.classList.add("hide");
-}, 8000);
+}, 3000);
 
 init();
