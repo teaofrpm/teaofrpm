@@ -55,11 +55,9 @@ async function init() {
   document.getElementById("roomNameLabel").textContent = window.TEAOFRPM_CONFIG.ROOM_NAME;
   document.getElementById("headerRoomName").textContent = window.TEAOFRPM_CONFIG.ROOM_NAME;
 
-  await Promise.all([
-    loadStickers(),
-    preloadProfiles(),
-    loadHistory()
-  ]);
+  await loadStickers();
+  await preloadProfiles();
+  await loadHistory();
   subscribeRealtime();
   subscribePresence();
   subscribeProfileUpdates();
@@ -242,8 +240,9 @@ async function renderMessage(m, reactions = [], grouped = false) {
   row.className = `msg-row ${isOwn ? "own" : ""} ${isOwnerMsg ? "owner-msg" : ""} ${grouped ? "grouped" : ""}`;
   row.dataset.msgId = m.id;
 
-  const avatar = document.createElement("div");
+  const avatar = document.createElement("a");
   avatar.className = "avatar";
+  avatar.href = author?.username ? `profile.html?u=${encodeURIComponent(author.username)}` : "#";
   avatar.style.background = colorFromName(author?.display_name || "?");
   avatar.textContent = initials(author?.display_name);
   row.appendChild(avatar);
@@ -254,7 +253,7 @@ async function renderMessage(m, reactions = [], grouped = false) {
   const meta = document.createElement("div");
   meta.className = "msg-meta";
   meta.innerHTML = `
-    <span class="msg-name">${escapeHTML(author?.display_name || "Unknown")}</span>
+    <a class="msg-name" href="${author?.username ? `profile.html?u=${encodeURIComponent(author.username)}` : "#"}">${escapeHTML(author?.display_name || "Unknown")}</a>
     ${author?.username ? `<span class="msg-username">@${escapeHTML(author.username)}</span>` : ""}
     ${isOwnerMsg ? `<span class="owner-badge">Owner</span>` : ""}
     <span>${formatTime(m.created_at)}</span>
@@ -560,51 +559,6 @@ function buildStickerPanel() {
       buildStickerPanel();
       sendMessage({ sticker: sticker.url });
     });
-  });
-}
-
-const MAX_IMAGE_DIMENSION = 1600; // longest side, in px
-const JPEG_QUALITY = 0.82;
-
-function compressImageFile(file) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    const objectUrl = URL.createObjectURL(file);
-
-    img.onload = () => {
-      let { width, height } = img;
-      if (width > MAX_IMAGE_DIMENSION || height > MAX_IMAGE_DIMENSION) {
-        if (width >= height) {
-          height = Math.round(height * (MAX_IMAGE_DIMENSION / width));
-          width = MAX_IMAGE_DIMENSION;
-        } else {
-          width = Math.round(width * (MAX_IMAGE_DIMENSION / height));
-          height = MAX_IMAGE_DIMENSION;
-        }
-      }
-
-      const canvas = document.createElement("canvas");
-      canvas.width = width;
-      canvas.height = height;
-      canvas.getContext("2d").drawImage(img, 0, 0, width, height);
-      URL.revokeObjectURL(objectUrl);
-
-      canvas.toBlob(
-        (blob) => {
-          if (!blob) return reject(new Error("Could not process this image."));
-          resolve(blob);
-        },
-        "image/jpeg",
-        JPEG_QUALITY
-      );
-    };
-
-    img.onerror = () => {
-      URL.revokeObjectURL(objectUrl);
-      reject(new Error("This photo's format isn't supported by your browser."));
-    };
-
-    img.src = objectUrl;
   });
 }
 
@@ -1145,10 +1099,11 @@ function renderMemberList() {
   list.innerHTML = "";
   for (const p of allMembers) {
     const isOnline = onlineMembers.has(p.id);
-    const row = document.createElement("div");
+    const row = document.createElement("a");
     row.className = `member-row ${p.id === ME.id ? "you" : ""}`;
+    row.href = `profile.html?u=${encodeURIComponent(p.username)}`;
 
-    const av = document.createElement("div");
+    const av = document.createElement("span");
     av.className = `avatar ${isOnline ? "is-online" : ""}`;
     av.style.background = colorFromName(p.display_name);
     av.style.width = "26px"; av.style.height = "26px"; av.style.fontSize = "10.5px";
@@ -1247,7 +1202,7 @@ async function runMessageSearch(term) {
 
     const text = document.createElement("div");
     text.className = "search-result-text";
-    text.innerHTML = `<b>${escapeHTML(author?.display_name || "Unknown")}</b> · <span>${formatTime(m.created_at)}</span><br>${escapeHTML(m.content)}`;
+    text.innerHTML = `<a href="profile.html?u=${encodeURIComponent(author?.username || "")}">${escapeHTML(author?.display_name || "Unknown")}</a> · <span>${formatTime(m.created_at)}</span><br>${escapeHTML(m.content)}`;
     row.appendChild(text);
 
     results.appendChild(row);
@@ -1256,6 +1211,6 @@ async function runMessageSearch(term) {
 
 setTimeout(() => {
   document.getElementById("loadingOverlay")?.classList.add("hide");
-}, 3000);
+}, 8000);
 
 init();
