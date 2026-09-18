@@ -7,60 +7,114 @@ let pendingPostImageFile = null;
 let pendingPostImagePreviewUrl = null;
 
 async function init() {
-  try {
-    const session = await requireSession("index.html");
-    if (!session) return;
+  const session = await requireSession("index.html");
+  if (!session) return;
 
-    ME = await getMyProfile();
-    if (!ME) {
-      document.getElementById("profileScroll").innerHTML = `<div class="locked-posts">Profile not found in database.</div>`;
-      return;
-    }
+  ME = await getMyProfile();
+  if (!ME) return;
 
-    if (ME.banned) {
-      toast("This account has been banned.");
-      await sb.auth.signOut();
-      window.location.href = "index.html";
-      return;
-    }
-    if (!ME.is_verified) {
-      window.location.href = "verify.html";
-      return;
-    }
+  if (ME.banned) {
+    toast("This account has been banned.");
+    await sb.auth.signOut();
+    window.location.href = "index.html";
+    return;
+  }
+  if (!ME.is_verified) {
+    window.location.href = "verify.html";
+    return;
+  }
 
-    const params = new URLSearchParams(window.location.search);
-    const rawUsername = params.get("u") || ME.username || "";
-    const targetUsername = rawUsername.toLowerCase();
+  const params = new URLSearchParams(window.location.search);
+  const targetUsername = (params.get("u") || ME.username).toLowerCase();
 
-    viewedUser = targetUsername === (ME.username || "").toLowerCase() ? ME : await getProfileByUsername(targetUsername);
+  viewedUser = targetUsername === ME.username ? ME : await getProfileByUsername(targetUsername);
+  if (!viewedUser) {
+    document.getElementById("profileScroll").innerHTML =
+      `<div class="locked-posts">User not found.</div>`;
+    document.getElementById("loadingOverlay").classList.add("hide");
+    return;
+  }
 
-    if (!viewedUser) {
-      document.getElementById("profileScroll").innerHTML = `<div class="locked-posts">User not found.</div>`;
-      return;
-    }
+  isOwnProfile = viewedUser.id === ME.id;
+  document.getElementById("profileTopTitle").textContent = isOwnProfile ? "Your profile" : `@${viewedUser.username}`;
 
-    isOwnProfile = viewedUser.id === ME.id;
-    document.getElementById("profileTopTitle").textContent = isOwnProfile ? "Your profile" : `@${viewedUser.username}`;
+  await loadFollowState();
+  renderProfileHeader();
+  await renderStats();
+  renderActions();
+  wireEditProfile();
+  wireNewPost();
+  wirePfpUpload();
+  wireFollowListModal();
+  await loadPosts();
+  await loadFollowRequests();
 
-    await loadFollowState();
-    renderProfileHeader();
-    await renderStats();
-    renderActions();
-    wireEditProfile();
-    wireNewPost();
-    wirePfpUpload();
-    wireFollowListModal();
-    await loadPosts();
+  document.getElementById("loadingOverlay").classList.add("hide");
+}
 
-  } catch (err) {
-    console.error("Profile Load Error:", err);
-    document.getElementById("profileScroll").innerHTML = `
-      <div style="padding: 20px; color: red; text-align: center;">
-        <b>Error Found:</b> ${err.message}
-      </div>`;
-  } finally {
-    const loader = document.getElementById("loadingOverlay");
-    if (loader) loader.classList.add("hide");
+async function loadFollowRequests() {
+  if (!isOwnProfile) return;
+
+  const { data, error } = await sb
+    .from("follows").select("*")
+    .eq("following_id", ME.id).eq("status", "pending")
+    .order("created_at", { ascending: false });
+
+  if (error || !data || !data.length) return;
+
+  const panel = document.getElementById("requestsPanel");
+  const list = document.getElementById("requestsList");
+  panel.style.display = "block";
+  list.innerHTML = "";
+
+  const requesterIds = data.map(r => r.follower_id);
+  await Promise.all(requesterIds.map(getProfile));
+
+  for (const req of data) {
+    const p = await getProfile(req.follower_id);
+    const row = document.createElement("div");
+    row.className = "request-row";
+
+    const av = document.createElement("span");
+    av.className = "avatar";
+    av.style.width = "34px"; av.style.height = "34px"; av.style.fontSize = "12px";
+    if (p?.pfp_url) { av.style.backgroundImage = `url("${p.pfp_url}")`; av.style.backgroundSize = "cover"; }
+    else { av.style.background = colorFromName(p?.display_name || "?"); av.textContent = initials(p?.display_name); }
+    row.appendChild(av);
+
+    const info = document.createElement("div");
+    info.className = "request-info";
+    info.innerHTML = `<div class="follow-list-name">${escapeHTML(p?.display_name || "Unknown")}</div><div class="follow-list-username">@${escapeHTML(p?.username || "")}</div>`;
+    row.appendChild(info);
+
+    const actions = document.createElement("div");
+    actions.className = "request-actions";
+
+    const acceptBtn = document.createElement("button");
+    acceptBtn.className = "request-accept";
+    acceptBtn.textContent = "Accept";
+    acceptBtn.addEventListener("click", async () => {
+      const { error: aErr } = await sb.from("follows").update({ status: "accepted" }).eq("id", req.id);
+      if (aErr) { toast(aErr.message || "Could not accept."); return; }
+      row.remove();
+      await renderStats();
+      if (!list.children.length) panel.style.display = "none";
+    });
+    actions.appendChild(acceptBtn);
+
+    const declineBtn = document.createElement("button");
+    declineBtn.className = "request-decline";
+    declineBtn.textContent = "Decline";
+    declineBtn.addEventListener("click", async () => {
+      const { error: dErr } = await sb.from("follows").delete().eq("id", req.id);
+      if (dErr) { toast(dErr.message || "Could not decline."); return; }
+      row.remove();
+      if (!list.children.length) panel.style.display = "none";
+    });
+    actions.appendChild(declineBtn);
+
+    row.appendChild(actions);
+    list.appendChild(row);
   }
 }
 
@@ -346,12 +400,46 @@ async function loadPosts() {
     return;
   }
 
+  const postIds = (data || []).map(p => p.id);
+  const [likeCounts, myLikes, commentCounts] = await Promise.all([
+    fetchLikeCounts(postIds),
+    fetchMyLikes(postIds),
+    fetchCommentCounts(postIds),
+  ]);
+
   for (const post of data || []) {
-    listEl.appendChild(buildPostCard(post));
+    listEl.appendChild(buildPostCard(
+      post,
+      likeCounts[post.id] || 0,
+      myLikes.has(post.id),
+      commentCounts[post.id] || 0
+    ));
   }
 }
 
-function buildPostCard(post) {
+async function fetchLikeCounts(postIds) {
+  if (!postIds.length) return {};
+  const { data } = await sb.from("post_likes").select("post_id").in("post_id", postIds);
+  const counts = {};
+  (data || []).forEach(r => { counts[r.post_id] = (counts[r.post_id] || 0) + 1; });
+  return counts;
+}
+
+async function fetchMyLikes(postIds) {
+  if (!postIds.length) return new Set();
+  const { data } = await sb.from("post_likes").select("post_id").eq("user_id", ME.id).in("post_id", postIds);
+  return new Set((data || []).map(r => r.post_id));
+}
+
+async function fetchCommentCounts(postIds) {
+  if (!postIds.length) return {};
+  const { data } = await sb.from("post_comments").select("post_id").eq("deleted", false).in("post_id", postIds);
+  const counts = {};
+  (data || []).forEach(r => { counts[r.post_id] = (counts[r.post_id] || 0) + 1; });
+  return counts;
+}
+
+function buildPostCard(post, likeCount, likedByMe, commentCount) {
   const card = document.createElement("div");
   card.className = "post-card";
 
@@ -389,7 +477,98 @@ function buildPostCard(post) {
     card.appendChild(img);
   }
 
+  const engageRow = document.createElement("div");
+  engageRow.className = "post-engage-row";
+
+  const likeBtn = document.createElement("button");
+  likeBtn.className = `like-btn ${likedByMe ? "liked" : ""}`;
+  likeBtn.innerHTML = `${likedByMe ? "❤️" : "🤍"} <span class="like-count">${likeCount}</span>`;
+  likeBtn.addEventListener("click", () => toggleLike(post.id, likeBtn));
+  engageRow.appendChild(likeBtn);
+
+  const commentBtn = document.createElement("button");
+  commentBtn.className = "comment-toggle-btn";
+  commentBtn.textContent = `💬 ${commentCount}`;
+  commentBtn.addEventListener("click", () => toggleComments(post.id, card));
+  engageRow.appendChild(commentBtn);
+
+  card.appendChild(engageRow);
+
+  const commentsSection = document.createElement("div");
+  commentsSection.className = "comments-section";
+  commentsSection.style.display = "none";
+  card.appendChild(commentsSection);
+
   return card;
+}
+
+async function toggleLike(postId, btn) {
+  const wasLiked = btn.classList.contains("liked");
+  if (wasLiked) {
+    const { error } = await sb.from("post_likes").delete().eq("post_id", postId).eq("user_id", ME.id);
+    if (error) { toast(error.message || "Could not unlike."); return; }
+  } else {
+    const { error } = await sb.from("post_likes").insert({ post_id: postId, user_id: ME.id });
+    if (error) { toast(error.message || "Could not like."); return; }
+  }
+  const current = parseInt(btn.querySelector(".like-count").textContent, 10) || 0;
+  const newCount = wasLiked ? current - 1 : current + 1;
+  btn.classList.toggle("liked", !wasLiked);
+  btn.innerHTML = `${!wasLiked ? "❤️" : "🤍"} <span class="like-count">${newCount}</span>`;
+}
+
+async function toggleComments(postId, card) {
+  const section = card.querySelector(".comments-section");
+  const isOpen = section.style.display !== "none";
+  if (isOpen) { section.style.display = "none"; return; }
+  section.style.display = "block";
+  await loadCommentsInto(postId, section, card);
+}
+
+async function loadCommentsInto(postId, section, card) {
+  section.innerHTML = `<div class="search-hint">Loading…</div>`;
+
+  const { data, error } = await sb
+    .from("post_comments").select("*")
+    .eq("post_id", postId).eq("deleted", false)
+    .order("created_at", { ascending: true });
+
+  if (error) { section.innerHTML = `<div class="search-hint">Could not load comments.</div>`; return; }
+
+  const authorIds = [...new Set((data || []).map(c => c.user_id))];
+  await Promise.all(authorIds.map(getProfile));
+
+  section.innerHTML = "";
+  for (const c of data || []) {
+    const author = await getProfile(c.user_id);
+    const row = document.createElement("div");
+    row.className = "comment-row";
+    row.innerHTML = `<b>${escapeHTML(author?.display_name || "Unknown")}</b> ${escapeHTML(c.content)}`;
+    section.appendChild(row);
+  }
+
+  const inputRow = document.createElement("div");
+  inputRow.className = "comment-input-row";
+  inputRow.innerHTML = `<input type="text" placeholder="Add a comment…" maxlength="300" /><button>Post</button>`;
+  section.appendChild(inputRow);
+
+  const input = inputRow.querySelector("input");
+  const sendBtn = inputRow.querySelector("button");
+  const submit = async () => {
+    const text = input.value.trim();
+    if (!text) return;
+    sendBtn.disabled = true;
+    const { error: cErr } = await sb.from("post_comments").insert({ post_id: postId, user_id: ME.id, content: text });
+    sendBtn.disabled = false;
+    if (cErr) { toast(cErr.message || "Could not post comment."); return; }
+    input.value = "";
+    await loadCommentsInto(postId, section, card);
+    const countBtn = card.querySelector(".comment-toggle-btn");
+    const current = parseInt(countBtn.textContent.replace(/\D/g, ""), 10) || 0;
+    countBtn.textContent = `💬 ${current + 1}`;
+  };
+  sendBtn.addEventListener("click", submit);
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") submit(); });
 }
 
 function wireFollowListModal() {
@@ -449,6 +628,6 @@ async function openFollowList(type) {
 
 setTimeout(() => {
   document.getElementById("loadingOverlay")?.classList.add("hide");
-}, 3000);
+}, 8000);
 
 init();
