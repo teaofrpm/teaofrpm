@@ -8,37 +8,63 @@ let pendingPostImageFile = null;
 let pendingPostImagePreviewUrl = null;
 
 async function init() {
-  const session = await requireSession("index.html");
-  if (!session) return;
-  
-ME = await getMyProfile();
-  if (!ME) {
-    document.getElementById("loadingOverlay").classList.add("hide");
-    document.getElementById("profileScroll").innerHTML = `<div class="locked-posts">Error loading profile. Database check karo.</div>`;
-    return;
-  }
+  try {
+    const session = await requireSession("index.html");
+    if (!session) return;
 
-  if (ME.banned) {
-    toast("This account has been banned.");
-    await sb.auth.signOut();
-    window.location.href = "index.html";
-    return;
-  }
-  if (!ME.is_verified) {
-    window.location.href = "verify.html";
-    return;
-  }
+    ME = await getMyProfile();
+    if (!ME) {
+      document.getElementById("loadingOverlay").classList.add("hide");
+      document.getElementById("profileScroll").innerHTML = `<div class="locked-posts">Profile row missing in database. Please check your Supabase 'profiles' table.</div>`;
+      return;
+    }
 
-  const params = new URLSearchParams(window.location.search);
-  const targetUsername = (params.get("u") || ME.username).toLowerCase();
+    if (ME.banned) {
+      toast("This account has been banned.");
+      await sb.auth.signOut();
+      window.location.href = "index.html";
+      return;
+    }
+    if (!ME.is_verified) {
+      window.location.href = "verify.html";
+      return;
+    }
 
-  viewedUser = targetUsername === ME.username ? ME : await getProfileByUsername(targetUsername);
-  if (!viewedUser) {
-    document.getElementById("profileScroll").innerHTML =
-      `<div class="locked-posts">User not found.</div>`;
-    document.getElementById("loadingOverlay").classList.add("hide");
-    return;
+
+    const params = new URLSearchParams(window.location.search);
+    const rawUsername = params.get("u") || ME.username || "";
+    const targetUsername = rawUsername.toLowerCase();
+
+    viewedUser = targetUsername === (ME.username || "").toLowerCase() ? ME : await getProfileByUsername(targetUsername);
+    
+    if (!viewedUser) {
+      document.getElementById("profileScroll").innerHTML = `<div class="locked-posts">User not found.</div>`;
+      document.getElementById("loadingOverlay").classList.add("hide");
+      return;
+    }
+
+    isOwnProfile = viewedUser.id === ME.id;
+    document.getElementById("profileTopTitle").textContent = isOwnProfile ? "Your profile" : `@${viewedUser.username}`;
+
+    await loadFollowState();
+    renderProfileHeader();
+    await renderStats();
+    renderActions();
+    wireEditProfile();
+    wireNewPost();
+    wirePfpUpload();
+    wireFollowListModal();
+    await loadPosts();
+
+  } catch (err) {
+    console.error("Profile Load Error:", err);
+    document.getElementById("profileScroll").innerHTML = `<div class="locked-posts">JavaScript Error: ${err.message}</div>`;
+  } finally {
+    
+    const loader = document.getElementById("loadingOverlay");
+    if (loader) loader.classList.add("hide");
   }
+}
 
   isOwnProfile = viewedUser.id === ME.id;
   document.getElementById("profileTopTitle").textContent = isOwnProfile ? "Your profile" : `@${viewedUser.username}`;
@@ -441,6 +467,6 @@ async function openFollowList(type) {
 
 setTimeout(() => {
   document.getElementById("loadingOverlay")?.classList.add("hide");
-}, 3000);
+}, 8000);
 
 init();
