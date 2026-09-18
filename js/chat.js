@@ -83,6 +83,21 @@ async function getProfile(userId) {
   return data;
 }
 
+// Shared avatar renderer: shows the uploaded pfp if one exists, else falls
+// back to the colored-initials circle. Used by messages, member list, and search.
+function applyAvatar(el, profile) {
+  if (profile?.pfp_url) {
+    el.style.backgroundImage = `url("${profile.pfp_url}")`;
+    el.style.backgroundSize = "cover";
+    el.style.backgroundPosition = "center";
+    el.textContent = "";
+  } else {
+    el.style.backgroundImage = "";
+    el.style.background = colorFromName(profile?.display_name || "?");
+    el.textContent = initials(profile?.display_name);
+  }
+}
+
 async function loadHistory() {
   const { data: msgs, error } = await sb
     .from("messages")
@@ -243,8 +258,7 @@ async function renderMessage(m, reactions = [], grouped = false) {
   const avatar = document.createElement("a");
   avatar.className = "avatar";
   avatar.href = author?.username ? `profile.html?u=${encodeURIComponent(author.username)}` : "#";
-  avatar.style.background = colorFromName(author?.display_name || "?");
-  avatar.textContent = initials(author?.display_name);
+  applyAvatar(avatar, author);
   row.appendChild(avatar);
 
   const wrap = document.createElement("div");
@@ -1105,9 +1119,8 @@ function renderMemberList() {
 
     const av = document.createElement("span");
     av.className = `avatar ${isOnline ? "is-online" : ""}`;
-    av.style.background = colorFromName(p.display_name);
     av.style.width = "26px"; av.style.height = "26px"; av.style.fontSize = "10.5px";
-    av.textContent = initials(p.display_name);
+    applyAvatar(av, p);
     row.appendChild(av);
 
     const info = document.createElement("div");
@@ -1195,9 +1208,8 @@ async function runMessageSearch(term) {
 
     const av = document.createElement("div");
     av.className = "avatar";
-    av.style.background = colorFromName(author?.display_name || "?");
     av.style.width = "26px"; av.style.height = "26px"; av.style.fontSize = "10px";
-    av.textContent = initials(author?.display_name);
+    applyAvatar(av, author);
     row.appendChild(av);
 
     const text = document.createElement("div");
