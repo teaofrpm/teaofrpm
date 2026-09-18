@@ -1,4 +1,3 @@
-
 (function () {
   const cfg = window.TEAOFRPM_CONFIG;
   if (!cfg || cfg.SUPABASE_URL.includes("YOUR-PROJECT-ID")) {
@@ -72,6 +71,66 @@ async function getMyProfile() {
     .select("*")
     .eq("id", sess.session.user.id)
     .single();
+  if (error) {
+    console.error(error);
+    return null;
+  }
+  return data;
+}
+
+const MAX_IMAGE_DIMENSION = 1600; // longest side, in px
+const JPEG_QUALITY = 0.82;
+
+// Re-encodes any photo the user picks (HEIC from iPhones, huge raw camera
+// files, etc.) into a resized JPEG, using the browser's own decoder.
+function compressImageFile(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const objectUrl = URL.createObjectURL(file);
+
+    img.onload = () => {
+      let { width, height } = img;
+      if (width > MAX_IMAGE_DIMENSION || height > MAX_IMAGE_DIMENSION) {
+        if (width >= height) {
+          height = Math.round(height * (MAX_IMAGE_DIMENSION / width));
+          width = MAX_IMAGE_DIMENSION;
+        } else {
+          width = Math.round(width * (MAX_IMAGE_DIMENSION / height));
+          height = MAX_IMAGE_DIMENSION;
+        }
+      }
+
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+      URL.revokeObjectURL(objectUrl);
+
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) return reject(new Error("Could not process this image."));
+          resolve(blob);
+        },
+        "image/jpeg",
+        JPEG_QUALITY
+      );
+    };
+
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("This photo's format isn't supported by your browser."));
+    };
+
+    img.src = objectUrl;
+  });
+}
+
+async function getProfileByUsername(username) {
+  const { data, error } = await sb
+    .from("profiles")
+    .select("*")
+    .eq("username", username.toLowerCase())
+    .maybeSingle();
   if (error) {
     console.error(error);
     return null;
