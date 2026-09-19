@@ -90,7 +90,7 @@ function renderPeople(people, error) {
 
     const info = document.createElement("div");
     info.innerHTML = `
-      <div class="follow-list-name">${escapeHTML(p.display_name)}${p.is_private ? " 🔒" : ""}</div>
+      <div class="follow-list-name">${escapeHTML(p.display_name)}${p.is_private ? " 🔒︎" : ""}</div>
       <div class="follow-list-username">@${escapeHTML(p.username)}</div>
     `;
     row.appendChild(info);
